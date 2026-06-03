@@ -1,43 +1,90 @@
 import streamlit as st
 import chromadb
-import ollama
+from groq import Groq
+import os
 
 from sentence_transformers import SentenceTransformer
 
-# Title
-st.title("PaulGPT")
-st.write("Ask a question and receive an answer based on Paul's epistles.")
+# ----------------------------
+# PAGE
+# ----------------------------
 
-# Load embedding model
+st.set_page_config(
+    page_title="PaulGPT",
+    page_icon="📜",
+    layout="centered"
+)
+
+st.title("PaulGPT")
+st.write(
+    "Ask a question and receive an answer based on Paul's epistles."
+)
+
+# ----------------------------
+# LOAD EMBEDDING MODEL
+# ----------------------------
+
 @st.cache_resource
 def load_model():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 embed_model = load_model()
 
-# Load ChromaDB
-client = chromadb.PersistentClient(path="chroma_db")
-collection = client.get_collection("paul")
+# ----------------------------
+# GROQ CLIENT
+# ----------------------------
 
-# User question
-question = st.text_input("Ask PaulGPT")
+client_groq = Groq(
+    api_key=os.environ["GROQ_API_KEY"]
+)
+
+# ----------------------------
+# CHROMADB
+# ----------------------------
+
+client = chromadb.PersistentClient(
+    path="chroma_db"
+)
+
+collection = client.get_collection(
+    "paul"
+)
+
+# ----------------------------
+# USER INPUT
+# ----------------------------
+
+question = st.text_input(
+    "Ask PaulGPT"
+)
+
+# ----------------------------
+# ASK BUTTON
+# ----------------------------
 
 if st.button("Ask"):
 
-    if question:
+    if question.strip():
 
-        query_embedding = embed_model.encode(question).tolist()
+        with st.spinner("Searching Paul's letters..."):
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=5
-        )
+            # Create query embedding
+            query_embedding = embed_model.encode(
+                question
+            ).tolist()
 
-        context = "\n\n".join(
-            results["documents"][0]
-        )
+            # Retrieve passages
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=5
+            )
 
-        prompt = f"""
+            context = "\n\n".join(
+                results["documents"][0]
+            )
+
+            # Prompt
+            prompt = f"""
 You are a scholarly simulation of the Apostle Paul.
 
 You are not literally Paul.
@@ -45,9 +92,11 @@ You are not literally Paul.
 Use the retrieved passages below as your primary source.
 
 Retrieved Passages:
+
 {context}
 
 Question:
+
 {question}
 
 Rules:
@@ -57,32 +106,50 @@ Rules:
 - Do not quote verse numbers.
 - Build a logical argument.
 - Use Paul's reasoning style.
+- Frequently connect ideas using:
+  "therefore",
+  "for",
+  "but",
+  "brethren".
 - Keep under 250 words.
 - End with encouragement in Christ.
 """
 
-        response = ollama.chat(
-            model="gemma3:4b",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+            # Groq call
+            response = client_groq.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7
+            )
+
+            answer = (
+                response
+                .choices[0]
+                .message
+                .content
+            )
+
+            st.subheader("PaulGPT")
+            st.write(answer)
+
+            # Retrieved passages
+            with st.expander("Retrieved Passages"):
+
+                for i, doc in enumerate(
+                    results["documents"][0],
+                    start=1
+                ):
+                    st.markdown(
+                        f"### Passage {i}"
+                    )
+                    st.write(doc)
+
+    else:
+        st.warning(
+            "Please enter a question."
         )
-
-        st.subheader("PaulGPT")
-
-        st.write(
-            response["message"]["content"]
-        )
-
-        with st.expander("Retrieved Passages"):
-
-            for i, doc in enumerate(
-                results["documents"][0], 1
-            ):
-                st.markdown(
-                    f"### Passage {i}"
-                )
-                st.write(doc)
