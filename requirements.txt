@@ -2,5 +2,5 @@ streamlit
 chromadb
 sentence-transformers
 langchain-text-splitters
-groq
+ollama
 torch
